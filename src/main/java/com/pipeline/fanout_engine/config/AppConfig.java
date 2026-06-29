@@ -21,6 +21,11 @@ public class AppConfig {
         return new ObjectMapper();
     }
 
+    @Bean
+    public com.fasterxml.jackson.dataformat.xml.XmlMapper xmlMapper() {
+        return new com.fasterxml.jackson.dataformat.xml.XmlMapper();
+    }
+
     @Data
     public static class SourceConfig {
         private String filePath;
