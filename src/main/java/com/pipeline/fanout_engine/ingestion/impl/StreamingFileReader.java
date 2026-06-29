@@ -32,6 +32,7 @@ public class StreamingFileReader implements RecordReader {
         this.fixedWidthFields = appConfig.getSource().getFixedWidthFields();
         this.objectMapper = objectMapper;
         this.reader = Files.newBufferedReader(Paths.get(filePath));
+        log.info("Opening file for streaming: {} with format: {}", this.filePath, this.format);
         
         if ("CSV".equals(format)) {
             // Read first line as CSV headers
