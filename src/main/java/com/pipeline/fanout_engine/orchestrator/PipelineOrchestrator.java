@@ -7,6 +7,8 @@ import com.pipeline.fanout_engine.observability.MetricsCollector;
 import com.pipeline.fanout_engine.sink.DataSink;
 import com.pipeline.fanout_engine.transformer.RecordTransformer;
 import com.pipeline.fanout_engine.transformer.TransformerFactory;
+import com.pipeline.fanout_engine.resilience.DeadLetterQueue;
+import com.pipeline.fanout_engine.resilience.RetryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,8 @@ public class PipelineOrchestrator {
     private final List<DataSink> sinks;
     private final TransformerFactory transformerFactory;
     private final MetricsCollector metricsCollector;
+    private final RetryService retryService;
+    private final DeadLetterQueue deadLetterQueue;
 
     private final Semaphore inFlightSemaphore = new Semaphore(1000);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -69,6 +73,7 @@ public class PipelineOrchestrator {
             virtualExecutor.awaitTermination(1, TimeUnit.HOURS);
         } finally {
             scheduler.shutdown();
+            deadLetterQueue.close();
             log.info("Pipeline run finished.");
         }
     }
@@ -83,12 +88,19 @@ public class PipelineOrchestrator {
                             .orElseThrow(() -> new IllegalArgumentException("No transformer found for sink " + sinkType));
                     
                     Object transformed = transformer.transform(record);
-                    sink.send(transformed);
+
+                    retryService.executeWithRetry(() -> {
+                        sink.send(transformed);
+                        return null;
+                    }, "Send to " + sinkType, 3, 100);
+
                     metricsCollector.incrementSuccess(sinkType);
                     future.complete(null);
                 } catch (Throwable t) {
                     metricsCollector.incrementFailure(sinkType);
-                    log.error("Failed to send record {} to sink {}: {}", record.getId(), sinkType, t.getMessage());
+                    log.error("Failed to send record {} to sink {} after retries: {}", 
+                              record.getId(), sinkType, t.getMessage());
+                    deadLetterQueue.writeToDlq(record, sinkType, t.getMessage());
                     future.completeExceptionally(t);
                 }
             });
