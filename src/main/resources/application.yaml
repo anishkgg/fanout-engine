@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: fanout-engine
+
+pipeline:
+  source:
+    filePath: "data/input.jsonl"
+    format: "JSONL" # CSV, JSONL, FIXED_WIDTH
+  sinks:
+    - type: "REST"
+      enabled: true
+      rateLimit: 50
+      properties:
+        endpoint: "http://localhost:8080/api/records"
+    - type: "GRPC"
+      enabled: true
+      rateLimit: 200
+      properties:
+        endpoint: "localhost:50051"
+    - type: "MESSAGE_QUEUE"
+      enabled: true
+      rateLimit: 500
+      properties:
+        topic: "raw-records"
+    - type: "DB"
+      enabled: true
+      rateLimit: 1000
+      properties:
+        table: "records_table"
